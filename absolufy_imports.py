@@ -21,22 +21,25 @@ def _find_relative_depth(parts: Sequence[str], module: str) -> int:
 
 
 class Visitor(ast.NodeVisitor):
-    def __init__(
-            self,
-            parts: Sequence[str],
-            srcs: Iterable[str],
-            *,
-            never: bool,
-    ) -> None:
+    def __init__(self, parts: Sequence[str], srcs: Iterable[str], *, never: bool,
+                 modules) -> None:
         self.parts = parts
         self.srcs = srcs
         self.to_replace: MutableMapping[int, Tuple[str, str]] = {}
         self.never = never
+        self.modules = modules
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        level = node.level
-        is_absolute = level == 0
-        absolute_import = '.'.join(self.parts[:-level])
+        self.handle_import(node)
+
+    def handle_import(self, node: ast.Import | ast.ImportFrom) -> None:
+        if isinstance(node, ast.ImportFrom):
+            level = node.level
+            is_absolute = level == 0
+            absolute_import = '.'.join(self.parts[:-level])
+        elif isinstance(node, ast.Import):
+            # if node.names ?
+            ...
 
         should_be_relative = bool(self.never)
         if is_absolute ^ should_be_relative:
@@ -91,6 +94,9 @@ class Visitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    def visit_Import(self, node: ast.Import) -> None:
+        self.handle_import(node)
+
 
 def absolute_imports(
         file: str,
@@ -130,11 +136,13 @@ def absolute_imports(
     except SyntaxError:
         return 0
 
-    visitor = Visitor(
-        relative_path.parts,
-        srcs,
-        never=never,
-    )
+    module_paths = list(
+        path for path in path.parent.iterdir() if
+         (path.is_dir() or path.name.endswith(".py")) and not path.name.startswith(
+             "__"))
+    module_names = [module_path.name.rstrip(".py") for module_path in module_paths]
+    visitor = Visitor(relative_path.parts, srcs, never=never, modules=module_names)
+    top_level_modules = module_names,
     visitor.visit(tree)
 
     if not visitor.to_replace:
@@ -155,7 +163,7 @@ def absolute_imports(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--application-directories', default='.:src')
+    parser.add_argument('--application-directories', default='.')#'.:src')
     parser.add_argument('files', nargs='*')
     parser.add_argument('--never', action='store_true')
     args = parser.parse_args(argv)
