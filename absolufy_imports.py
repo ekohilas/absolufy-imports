@@ -32,12 +32,16 @@ class Visitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         self.handle_import(node)
 
+    def visit_Import(self, node: ast.Import) -> None:
+        self.handle_import(node)
+
     def handle_import(self, node: ast.Import | ast.ImportFrom) -> None:
         if isinstance(node, ast.ImportFrom):
             level = node.level
             is_absolute = level == 0
             absolute_import = '.'.join(self.parts[:-level])
         elif isinstance(node, ast.Import):
+            return
             # if node.names ?
             ...
 
@@ -94,10 +98,6 @@ class Visitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    def visit_Import(self, node: ast.Import) -> None:
-        self.handle_import(node)
-
-
 def absolute_imports(
         file: str,
         srcs: Iterable[str],
@@ -136,11 +136,7 @@ def absolute_imports(
     except SyntaxError:
         return 0
 
-    module_paths = list(
-        path for path in path.parent.iterdir() if
-         (path.is_dir() or path.name.endswith(".py")) and not path.name.startswith(
-             "__"))
-    module_names = [module_path.name.rstrip(".py") for module_path in module_paths]
+    module_names = method_names(path)
     visitor = Visitor(relative_path.parts, srcs, never=never, modules=module_names)
     top_level_modules = module_names,
     visitor.visit(tree)
@@ -159,6 +155,15 @@ def absolute_imports(
     with open(file, 'w', encoding='utf-8', newline='') as fd:
         fd.write(''.join(newlines))
     return 1
+
+
+def method_names(path):
+    module_paths = list(
+        path for path in path.parent.iterdir() if
+        (path.is_dir() or path.name.endswith(".py")) and not path.name.startswith(
+            "__"))
+    module_names = [module_path.name.rstrip(".py") for module_path in module_paths]
+    return module_names
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
